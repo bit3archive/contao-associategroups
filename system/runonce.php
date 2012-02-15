@@ -28,7 +28,7 @@
  */
 
 
-class Runonce extends Frontend
+class Runonce extends Controller
 {
 
 	/**
@@ -59,17 +59,11 @@ class Runonce extends Frontend
 									  PRIMARY KEY  (`id`)
 									) ENGINE=MyISAM DEFAULT CHARSET=utf8;");
 									
-			$objMembers = $this->Database->execute("SELECT id,groups FROM tl_member WHERE groups!=''");
-			
-			while( $objMembers->next() )
-			{
-				$arrGroups = deserialize($objMembers->groups);
-				
-				if (is_array($arrGroups) && count($arrGroups))
-				{
-					$this->Database->query("INSERT INTO tl_member_to_group (tstamp,member_id,group_id) VALUES ($time,{$objMembers->id}," . implode("), ($time,{$objMembers->id},", $arrGroups) . ")");
-				}
-			}
+			$this->Database->query("INSERT INTO `tl_member_to_group` (tstamp, member_id, group_id)
+									SELECT m.tstamp, m.id, g.id FROM tl_member m
+									INNER JOIN tl_member_group g
+									ON m.groups REGEXP CONCAT('s:[0-9]*:\"', g.id, '\";')
+									OR m.groups REGEXP CONCAT('i:', g.id, ';')");
 		}
 		
 		
@@ -82,16 +76,32 @@ class Runonce extends Frontend
 									  `group_id` int(10) unsigned NOT NULL default '0',
 									  PRIMARY KEY  (`id`)
 									) ENGINE=MyISAM DEFAULT CHARSET=utf8;");
-									
-			$objUsers = $this->Database->execute("SELECT id,groups FROM tl_user WHERE groups!=''");
-			
-			while( $objUsers->next() )
-			{
-				$arrGroups = deserialize($objUsers->groups);
-				
-				if (is_array($arrGroups) && count($arrGroups))
-				{
-					$this->Database->query("INSERT INTO tl_user_to_group (tstamp,user_id,group_id) VALUES ($time,{$objUsers->id}," . implode("), ($time,{$objUsers->id},", $arrGroups) . ")");
+
+
+			$this->Database->query("INSERT INTO `tl_user_to_group` (tstamp, user_id, group_id)
+									SELECT u.tstamp, u.id, g.id FROM tl_user u
+									INNER JOIN tl_user_group g
+									ON u.groups REGEXP CONCAT('s:[0-9]*:\"', g.id, '\";')
+									OR u.groups REGEXP CONCAT('i:', g.id, ';')");
+		}
+
+		$this->updateTrigger(file_get_contents(TL_ROOT . '/system/modules/associategroups/config/trigger.associategroups_member_to_group.sql'));
+
+		$this->updateTrigger(file_get_contents(TL_ROOT . '/system/modules/associategroups/config/trigger.associategroups_user_to_group.sql'));
+	}
+
+	protected function updateTrigger($strSql)
+	{
+		$arrQueries = explode('$$', $strSql);
+
+		foreach ($arrQueries as $strQuery) {
+			$strQuery = trim($strQuery);
+			if (strlen($strQuery)) {
+				$this->log('query: ' . $strQuery, 'runonce::updateTrigger', TL_INFO);
+				try {
+					$this->Database->query(str_replace('$$', '', $strQuery));
+				} catch(Exception $e) {
+					$this->log($e->getMessage(), 'runonce::updateTrigger', TL_ERROR);
 				}
 			}
 		}
